@@ -7,6 +7,7 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+logging.basicConfig(level=logging.INFO)
 def validate_identifier(value: str, name: str) -> str:
     if not IDENTIFIER_PATTERN.match(value):
         raise ValueError(
@@ -79,5 +80,4 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
     run_pipeline(parse_args())
