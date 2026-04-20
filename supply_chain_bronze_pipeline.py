@@ -83,4 +83,5 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     run_pipeline(parse_args())
