@@ -6,6 +6,13 @@ resources:
         - task_key: ingest_raw_supply_chain
           spark_python_task:
             python_file: ./src/bronze/ingest_raw.py
+            parameters:
+              - --source-path
+              - ${var.source_path}
+              - --checkpoint-path
+              - ${var.checkpoint_path}
+              - --schema-location
+              - ${var.schema_location}
           job_cluster_key: bronze_ingest_cluster
       job_clusters:
         - job_cluster_key: bronze_ingest_cluster
