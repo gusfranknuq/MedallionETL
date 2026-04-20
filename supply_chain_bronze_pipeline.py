@@ -1,13 +1,21 @@
 import argparse
+import logging
+import re
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 
-def quote_identifier(value: str, name: str) -> str:
-    if not value or not value.strip():
-        raise ValueError(f"{name} cannot be empty")
-    return f"`{value.replace('`', '``')}`"
+IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+LOGGER = logging.getLogger(__name__)
+
+
+def validate_identifier(value: str, name: str) -> str:
+    if not IDENTIFIER_PATTERN.match(value):
+        raise ValueError(
+            f"{name} must match [A-Za-z_][A-Za-z0-9_]* for safe table/schema creation"
+        )
+    return value
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,9 +51,9 @@ def parse_args() -> argparse.Namespace:
 def run_pipeline(args: argparse.Namespace) -> None:
     spark = SparkSession.builder.appName("supply_chain_bronze_pipeline").getOrCreate()
 
-    catalog = quote_identifier(args.catalog, "catalog")
-    schema = quote_identifier(args.schema, "schema")
-    bronze_table = quote_identifier(args.bronze_table, "bronze_table")
+    catalog = validate_identifier(args.catalog, "catalog")
+    schema = validate_identifier(args.schema, "schema")
+    bronze_table = validate_identifier(args.bronze_table, "bronze_table")
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 
@@ -70,7 +78,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     try:
         query.awaitTermination()
     except KeyboardInterrupt:
-        print("Gracefully shutting down streaming query...")
+        LOGGER.info("Gracefully shutting down streaming query...")
         query.stop()
 
 
