@@ -38,6 +38,12 @@ variables:
   inventory_file_pattern:
     description: File discovery pattern for inventory raw file ingestion
     default: inventory_raw.jsonl
+  silver_sales_checkpoint_path:
+    description: Checkpoint location for Silver sales transformation stream
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/checkpoints/silver_sales
+  silver_inventory_checkpoint_path:
+    description: Checkpoint location for Silver inventory transformation stream
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/checkpoints/silver_inventory
 
 targets:
   dev:

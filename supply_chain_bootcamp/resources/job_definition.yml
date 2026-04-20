@@ -49,3 +49,37 @@ resources:
               - --run-date
               - "{{job.parameters.run_date}}"
           existing_cluster_id: ${var.existing_cluster_id}
+        - task_key: transform_silver_sales
+          depends_on:
+            - task_key: ingest_raw_sales
+          spark_python_task:
+            python_file: ./src/silver/build_silver.py
+            parameters:
+              - --catalog
+              - ${var.catalog_name}
+              - --schema
+              - ${var.schema_name}
+              - --entity
+              - sales
+              - --checkpoint-path
+              - ${var.silver_sales_checkpoint_path}
+              - --run-date
+              - "{{job.parameters.run_date}}"
+          existing_cluster_id: ${var.existing_cluster_id}
+        - task_key: transform_silver_inventory
+          depends_on:
+            - task_key: ingest_raw_inventory
+          spark_python_task:
+            python_file: ./src/silver/build_silver.py
+            parameters:
+              - --catalog
+              - ${var.catalog_name}
+              - --schema
+              - ${var.schema_name}
+              - --entity
+              - inventory
+              - --checkpoint-path
+              - ${var.silver_inventory_checkpoint_path}
+              - --run-date
+              - "{{job.parameters.run_date}}"
+          existing_cluster_id: ${var.existing_cluster_id}
