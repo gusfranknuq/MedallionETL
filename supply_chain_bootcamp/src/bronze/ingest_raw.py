@@ -7,6 +7,7 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+RUN_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 logging.basicConfig(level=logging.INFO)
 
 
@@ -15,6 +16,14 @@ def validate_identifier(value: str, name: str) -> str:
         raise ValueError(
             f"{name} must match [A-Za-z_][A-Za-z0-9_]* for safe table/schema creation"
         )
+    return value
+
+
+def validate_run_date(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not RUN_DATE_PATTERN.match(value):
+        raise ValueError("run_date must be in YYYY-MM-DD format")
     return value
 
 
@@ -52,7 +61,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--run-date",
-        default="",
+        default=None,
         help="Optional run date parameter passed by workflow tasks",
     )
     return parser.parse_args()
@@ -66,6 +75,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     bronze_table = validate_identifier(args.bronze_table, "bronze_table")
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    run_date_value = validate_run_date(args.run_date)
 
     source_df = (
         spark.readStream.format("cloudFiles")
@@ -77,7 +87,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .load(args.source_path)
         .withColumn("_ingest_ts", F.current_timestamp())
         .withColumn("_source_file", F.input_file_name())
-        .withColumn("_run_date", F.lit(args.run_date or None))
+        .withColumn("_run_date", F.lit(run_date_value))
     )
 
     query = (

@@ -5,7 +5,7 @@ resources:
       parameters:
         - name: run_date
           default: ""
-          description: Optional run date for this workflow execution (recommended YYYY-MM-DD)
+          description: Optional run date for this workflow execution; when provided, format must be YYYY-MM-DD
       tasks:
         - task_key: ingest_raw_sales
           spark_python_task:
