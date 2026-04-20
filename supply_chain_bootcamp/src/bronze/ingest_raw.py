@@ -7,6 +7,7 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+RUN_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 logging.basicConfig(level=logging.INFO)
 
 
@@ -18,9 +19,17 @@ def validate_identifier(value: str, name: str) -> str:
     return value
 
 
+def validate_run_date(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not RUN_DATE_PATTERN.match(value):
+        raise ValueError("run_date must be in YYYY-MM-DD format")
+    return value
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Stream supply chain data into a Bronze Delta table with Auto Loader."
+        description="Ingest raw supply chain data into a Bronze Delta table with Auto Loader."
     )
     parser.add_argument("--catalog", default="main", help="Unity Catalog name")
     parser.add_argument("--schema", default="supply_chain", help="Unity Catalog schema name")
@@ -31,8 +40,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--source-format", default="json", help="Input file format")
     parser.add_argument(
+        "--source-file-pattern",
+        required=True,
+        help="File pattern for Auto Loader discovery (for example, sales_raw.jsonl)",
+    )
+    parser.add_argument(
         "--bronze-table",
-        default="bronze_supply_chain",
+        required=True,
         help="Bronze Delta table name",
     )
     parser.add_argument(
@@ -45,6 +59,11 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Cloud storage path where Auto Loader persists inferred schema",
     )
+    parser.add_argument(
+        "--run-date",
+        default=None,
+        help="Optional run date parameter passed by workflow tasks",
+    )
     return parser.parse_args()
 
 
@@ -56,6 +75,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
     bronze_table = validate_identifier(args.bronze_table, "bronze_table")
 
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    run_date_value = validate_run_date(args.run_date)
 
     source_df = (
         spark.readStream.format("cloudFiles")
@@ -63,22 +83,21 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .option("cloudFiles.inferColumnTypes", "true")
         .option("cloudFiles.schemaLocation", args.schema_location)
         .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
+        .option("pathGlobFilter", args.source_file_pattern)
         .load(args.source_path)
         .withColumn("_ingest_ts", F.current_timestamp())
         .withColumn("_source_file", F.input_file_name())
+        .withColumn("_run_date", F.lit(run_date_value))
     )
 
     query = (
         source_df.writeStream.format("delta")
         .option("checkpointLocation", args.checkpoint_path)
+        .trigger(availableNow=True)
         .outputMode("append")
         .toTable(f"{catalog}.{schema}.{bronze_table}")
     )
-    try:
-        query.awaitTermination()
-    except KeyboardInterrupt:
-        logging.info("Gracefully shutting down streaming query...")
-        query.stop()
+    query.awaitTermination()
 
 
 if __name__ == "__main__":
