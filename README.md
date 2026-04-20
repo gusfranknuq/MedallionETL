@@ -8,6 +8,7 @@ Databricks bundle project root: `supply_chain_bootcamp`
 - Bundle entrypoint: `supply_chain_bootcamp/databricks.yml`
 - Job definition: `supply_chain_bootcamp/resources/job_definition.yml`
 - PySpark ingest script: `supply_chain_bootcamp/src/bronze/ingest_raw.py`
+- Set `workspace_host` in `supply_chain_bootcamp/databricks.yml` to your Azure Databricks workspace URL
 
 The ingest script runs a Unity Catalog-aware Bronze ingestion flow:
 

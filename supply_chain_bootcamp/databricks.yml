@@ -4,9 +4,14 @@ bundle:
 include:
   - resources/*.yml
 
+variables:
+  workspace_host:
+    description: Azure Databricks workspace URL
+    default: https://<your-azure-databricks-workspace-url>
+
 targets:
   dev:
     mode: development
     default: true
     workspace:
-      host: https://<your-azure-databricks-workspace-url>
+      host: ${var.workspace_host}
