@@ -1,17 +1,13 @@
 import argparse
-import re
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 
-IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-
-def validate_identifier(value: str, name: str) -> str:
-    if not IDENTIFIER_PATTERN.match(value):
-        raise ValueError(f"{name} must contain only letters, numbers, and underscores")
-    return value
+def quote_identifier(value: str, name: str) -> str:
+    if not value or not value.strip():
+        raise ValueError(f"{name} cannot be empty")
+    return f"`{value.replace('`', '``')}`"
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,11 +43,11 @@ def parse_args() -> argparse.Namespace:
 def run_pipeline(args: argparse.Namespace) -> None:
     spark = SparkSession.builder.appName("supply_chain_bronze_pipeline").getOrCreate()
 
-    catalog = validate_identifier(args.catalog, "catalog")
-    schema = validate_identifier(args.schema, "schema")
-    bronze_table = validate_identifier(args.bronze_table, "bronze_table")
+    catalog = quote_identifier(args.catalog, "catalog")
+    schema = quote_identifier(args.schema, "schema")
+    bronze_table = quote_identifier(args.bronze_table, "bronze_table")
 
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS `{catalog}`.`{schema}`")
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
 
     source_df = (
         spark.readStream.format("cloudFiles")
@@ -69,11 +65,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .option("checkpointLocation", args.checkpoint_path)
         .option("mergeSchema", "true")
         .outputMode("append")
-        .toTable(f"`{catalog}`.`{schema}`.`{bronze_table}`")
+        .toTable(f"{catalog}.{schema}.{bronze_table}")
     )
     try:
         query.awaitTermination()
     except KeyboardInterrupt:
+        print("Gracefully shutting down streaming query...")
         query.stop()
 
 
