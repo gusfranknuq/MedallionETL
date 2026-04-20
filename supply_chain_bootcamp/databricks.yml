@@ -6,26 +6,35 @@ include:
 
 variables:
   workspace_host:
-    description: Azure Databricks workspace URL
-    default: https://adb-1234567890123456.7.azuredatabricks.net
+    description: Databricks workspace URL
+    default: https://dbc-55232ca1-31c5.cloud.databricks.com/
+  catalog_name:
+    description: Unity Catalog catalog name
+    default: workspace
+  schema_name:
+    description: Unity Catalog schema name
+    default: supply_chain
+  existing_cluster_id:
+    description: Existing all-purpose cluster ID for Auto Loader jobs
+    default: REPLACE_WITH_CLUSTER_ID
   source_path:
-    description: Cloud storage path for raw supply chain files
-    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/raw
+    description: Unity Catalog Volume path for raw supply chain files
+    default: /Volumes/workspace/supply_chain/raw_sample_files
   sales_checkpoint_path:
     description: Checkpoint location for Bronze sales ingestion stream
-    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/checkpoints/bronze_sales
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/checkpoints/bronze_sales
   sales_schema_location:
     description: Schema tracking location for Bronze sales Auto Loader stream
-    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/schemas/bronze_sales
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/schemas/bronze_sales
   sales_file_pattern:
     description: File discovery pattern for sales raw file ingestion
     default: sales_raw.jsonl
   inventory_checkpoint_path:
     description: Checkpoint location for Bronze inventory ingestion stream
-    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/checkpoints/bronze_inventory
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/checkpoints/bronze_inventory
   inventory_schema_location:
     description: Schema tracking location for Bronze inventory Auto Loader stream
-    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/schemas/bronze_inventory
+    default: /Volumes/workspace/supply_chain/raw_sample_files/_state/schemas/bronze_inventory
   inventory_file_pattern:
     description: File discovery pattern for inventory raw file ingestion
     default: inventory_raw.jsonl
