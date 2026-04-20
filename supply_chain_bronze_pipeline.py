@@ -7,9 +7,6 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-LOGGER = logging.getLogger(__name__)
-
-
 def validate_identifier(value: str, name: str) -> str:
     if not IDENTIFIER_PATTERN.match(value):
         raise ValueError(
@@ -71,14 +68,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
     query = (
         source_df.writeStream.format("delta")
         .option("checkpointLocation", args.checkpoint_path)
-        .option("mergeSchema", "true")
         .outputMode("append")
         .toTable(f"{catalog}.{schema}.{bronze_table}")
     )
     try:
         query.awaitTermination()
     except KeyboardInterrupt:
-        LOGGER.info("Gracefully shutting down streaming query...")
+        logging.info("Gracefully shutting down streaming query...")
         query.stop()
 
 
