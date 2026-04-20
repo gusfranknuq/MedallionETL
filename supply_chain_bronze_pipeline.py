@@ -50,13 +50,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .withColumn("_source_file", F.input_file_name())
     )
 
-    (
+    query = (
         source_df.writeStream.format("delta")
         .option("checkpointLocation", args.checkpoint_path)
         .option("mergeSchema", "true")
         .outputMode("append")
         .toTable(f"`{args.catalog}`.`{args.schema}`.`{args.bronze_table}`")
     )
+    query.awaitTermination()
 
 
 if __name__ == "__main__":
