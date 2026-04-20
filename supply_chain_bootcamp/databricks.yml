@@ -1,0 +1,12 @@
+bundle:
+  name: supply_chain_bootcamp
+
+include:
+  - resources/*.yml
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://<your-azure-databricks-workspace-url>

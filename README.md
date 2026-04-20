@@ -3,7 +3,13 @@ End-to-end supply chain data pipeline using the Medallion architecture
 
 ## Supply chain Bronze ingestion (PySpark + Auto Loader)
 
-Use `supply_chain_bronze_pipeline.py` to run a Unity Catalog-aware Bronze ingestion flow:
+Databricks bundle project root: `supply_chain_bootcamp`
+
+- Bundle entrypoint: `supply_chain_bootcamp/databricks.yml`
+- Job definition: `supply_chain_bootcamp/resources/job_definition.yml`
+- PySpark ingest script: `supply_chain_bootcamp/src/bronze/ingest_raw.py`
+
+The ingest script runs a Unity Catalog-aware Bronze ingestion flow:
 
 - Creates Unity Catalog schema: `supply_chain` (inside configurable catalog)
 - Reads supply chain files from cloud storage with Auto Loader (`cloudFiles`)
