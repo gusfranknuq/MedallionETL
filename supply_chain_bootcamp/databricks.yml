@@ -1,0 +1,26 @@
+bundle:
+  name: supply_chain_bootcamp
+
+include:
+  - resources/*.yml
+
+variables:
+  workspace_host:
+    description: Azure Databricks workspace URL
+    default: https://adb-1234567890123456.7.azuredatabricks.net
+  source_path:
+    description: Cloud storage path for raw supply chain files
+    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/raw
+  checkpoint_path:
+    description: Cloud storage checkpoint location for Bronze ingestion stream
+    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/checkpoints/bronze
+  schema_location:
+    description: Cloud storage schema tracking location for Auto Loader
+    default: abfss://<container>@<storage-account>.dfs.core.windows.net/supply_chain/schemas/bronze
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: ${var.workspace_host}

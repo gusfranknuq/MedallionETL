@@ -1,0 +1,22 @@
+resources:
+  jobs:
+    supply_chain_bronze_ingestion:
+      name: supply_chain_bronze_ingestion
+      tasks:
+        - task_key: ingest_raw_supply_chain
+          spark_python_task:
+            python_file: ./src/bronze/ingest_raw.py
+            parameters:
+              - --source-path
+              - ${var.source_path}
+              - --checkpoint-path
+              - ${var.checkpoint_path}
+              - --schema-location
+              - ${var.schema_location}
+          job_cluster_key: bronze_ingest_cluster
+      job_clusters:
+        - job_cluster_key: bronze_ingest_cluster
+          new_cluster:
+            spark_version: 15.4.x-scala2.12
+            node_type_id: Standard_DS3_v2
+            num_workers: 1
