@@ -49,9 +49,14 @@ resources:
               - --run-date
               - "{{job.parameters.run_date}}"
           existing_cluster_id: ${var.existing_cluster_id}
+    supply_chain_silver_transform:
+      name: supply_chain_silver_transform
+      parameters:
+        - name: run_date
+          default: ""
+          description: Optional run date for this workflow execution; when provided, format must be YYYY-MM-DD
+      tasks:
         - task_key: transform_silver_sales
-          depends_on:
-            - task_key: ingest_raw_sales
           spark_python_task:
             python_file: ./src/silver/build_silver.py
             parameters:
@@ -66,9 +71,26 @@ resources:
               - --run-date
               - "{{job.parameters.run_date}}"
           existing_cluster_id: ${var.existing_cluster_id}
-        - task_key: transform_silver_inventory
+    supply_chain_medallion_orchestration:
+      name: supply_chain_medallion_orchestration
+      parameters:
+        - name: run_date
+          default: ""
+          description: Optional run date for this workflow execution; when provided, format must be YYYY-MM-DD
+      tasks:
+        - task_key: run_bronze_job
+          run_job_task:
+            job_id: ${resources.jobs.supply_chain_bronze_ingestion.id}
+            job_parameters:
+              run_date: "{{job.parameters.run_date}}"
+        - task_key: run_silver_job
           depends_on:
-            - task_key: ingest_raw_inventory
+            - task_key: run_bronze_job
+          run_job_task:
+            job_id: ${resources.jobs.supply_chain_silver_transform.id}
+            job_parameters:
+              run_date: "{{job.parameters.run_date}}"
+        - task_key: transform_silver_inventory
           spark_python_task:
             python_file: ./src/silver/build_silver.py
             parameters:

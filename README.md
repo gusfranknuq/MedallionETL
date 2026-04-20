@@ -24,9 +24,17 @@ The ingest script runs a Unity Catalog-aware Bronze ingestion flow:
 
 ## Silver transformations (PySpark DataFrame API)
 
-The workflow also includes Silver layer cleanup tasks with DataFrame API only:
+The bundle defines separate Bronze and Silver jobs:
+
+- `supply_chain_bronze_ingestion` for Auto Loader ingestion from raw files to Bronze
+- `supply_chain_silver_transform` for DataFrame API cleanup from Bronze to Silver
+- `supply_chain_medallion_orchestration` to run Bronze and then Silver in sequence
+
+The Silver job uses DataFrame API only:
 
 - Reads from Bronze tables (`bronze_sales`, `bronze_inventory`) as streaming sources
 - Applies typed casts, null filtering, simple data quality filters, and deduplication
 - Writes to Silver Delta tables (`silver_sales`, `silver_inventory`) with separate checkpoint locations
 - Uses `trigger(availableNow=True)` to process available Bronze data and finish
+
+You can run each layer independently, or run the orchestration job to execute layers in sequence.
