@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--bronze-table",
-        default="bronze_sales",
+        required=True,
         help="Bronze Delta table name",
     )
     parser.add_argument(
@@ -77,7 +77,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .load(args.source_path)
         .withColumn("_ingest_ts", F.current_timestamp())
         .withColumn("_source_file", F.input_file_name())
-        .withColumn("_run_date", F.lit(args.run_date))
+        .withColumn("_run_date", F.lit(args.run_date or None))
     )
 
     query = (
