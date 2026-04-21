@@ -2,8 +2,10 @@ import argparse
 import logging
 import re
 
+from delta.tables import DeltaTable
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -54,9 +56,19 @@ def parse_args() -> argparse.Namespace:
 
 def clean_sales(df):
     return (
-        df.filter(F.col("transaction_id").isNotNull())
+        unnest_sales_items(df)
+        .filter(F.col("transaction_id").isNotNull())
         .filter(F.col("customer_id").isNotNull())
-        .withColumn("sale_id", F.col("transaction_id").cast("string"))
+        .filter(F.col("sku").isNotNull())
+        .filter(F.col("quantity") > 0)
+        .filter(F.col("unit_price") >= 0)
+        .dropDuplicates(["sale_id", "sku"])
+    )
+
+
+def unnest_sales_items(df):
+    return (
+        df.withColumn("sale_id", F.col("transaction_id").cast("string"))
         .withColumn("customer_id", F.col("customer_id").cast("string"))
         .withColumn("store_id", F.col("store_id").cast("string"))
         .withColumn("sale_ts", F.to_timestamp("timestamp"))
@@ -68,10 +80,6 @@ def clean_sales(df):
         .withColumn("payment_method", F.col("payload.payment_method").cast("string"))
         .withColumn("line_amount", F.col("quantity") * F.col("unit_price"))
         .drop("item")
-        .filter(F.col("sku").isNotNull())
-        .filter(F.col("quantity") > 0)
-        .filter(F.col("unit_price") >= 0)
-        .dropDuplicates(["sale_id", "sku"])
     )
 
 
@@ -84,8 +92,42 @@ def clean_inventory(df):
         .withColumn("status", F.col("status").cast("string"))
         .withColumn("stock_level", F.col("stock_level").cast("int"))
         .withColumn("snapshot_ts", F.to_timestamp("snapshot_time"))
+        .filter(F.col("snapshot_ts").isNotNull())
         .filter(F.col("stock_level") >= 0)
         .dropDuplicates(["sku", "store_id", "snapshot_ts"])
+    )
+
+
+def merge_inventory_batch(batch_df, catalog, schema, silver_table, run_date_value):
+    spark = batch_df.sparkSession
+    table_name = f"{catalog}.{schema}.{silver_table}"
+
+    prepared_df = (
+        clean_inventory(batch_df)
+        .withColumn("_silver_ingest_ts", F.current_timestamp())
+        .withColumn(
+            "_run_date",
+            F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
+        )
+    )
+
+    latest_window = Window.partitionBy("sku", "store_id").orderBy(F.col("snapshot_ts").desc())
+    latest_df = (
+        prepared_df.withColumn("_latest_rank", F.row_number().over(latest_window))
+        .filter(F.col("_latest_rank") == 1)
+        .drop("_latest_rank")
+    )
+
+    if not spark.catalog.tableExists(table_name):
+        latest_df.limit(0).write.format("delta").saveAsTable(table_name)
+
+    target = DeltaTable.forName(spark, table_name)
+    (
+        target.alias("t")
+        .merge(latest_df.alias("s"), "t.sku = s.sku AND t.store_id = s.store_id")
+        .whenMatchedUpdateAll(condition="s.snapshot_ts >= t.snapshot_ts")
+        .whenNotMatchedInsertAll()
+        .execute()
     )
 
 
@@ -104,24 +146,36 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     if entity == "sales":
         transformed_df = clean_sales(source_df)
-    else:
-        transformed_df = clean_inventory(source_df)
-
-    output_df = (
-        transformed_df.withColumn("_silver_ingest_ts", F.current_timestamp())
-        .withColumn(
-            "_run_date",
-            F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
+        output_df = (
+            transformed_df.withColumn("_silver_ingest_ts", F.current_timestamp())
+            .withColumn(
+                "_run_date",
+                F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
+            )
         )
-    )
 
-    query = (
-        output_df.writeStream.format("delta")
-        .option("checkpointLocation", args.checkpoint_path)
-        .trigger(availableNow=True)
-        .outputMode("append")
-        .toTable(f"{catalog}.{schema}.{silver_table}")
-    )
+        query = (
+            output_df.writeStream.format("delta")
+            .option("checkpointLocation", args.checkpoint_path)
+            .trigger(availableNow=True)
+            .outputMode("append")
+            .toTable(f"{catalog}.{schema}.{silver_table}")
+        )
+    else:
+        query = (
+            source_df.writeStream.option("checkpointLocation", args.checkpoint_path)
+            .trigger(availableNow=True)
+            .foreachBatch(
+                lambda batch_df, _batch_id: merge_inventory_batch(
+                    batch_df,
+                    catalog,
+                    schema,
+                    silver_table,
+                    run_date_value,
+                )
+            )
+            .start()
+        )
     query.awaitTermination()
 
 

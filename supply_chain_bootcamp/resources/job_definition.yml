@@ -74,6 +74,21 @@ resources:
               - sales
               - --checkpoint-path
               - ${var.silver_sales_checkpoint_path}
+               - --run-date
+               - "{{job.parameters.run_date}}"
+          environment_key: default
+        - task_key: transform_silver_inventory
+          spark_python_task:
+            python_file: ../src/silver/build_silver.py
+            parameters:
+              - --catalog
+              - ${var.catalog_name}
+              - --schema
+              - ${var.schema_name}
+              - --entity
+              - inventory
+              - --checkpoint-path
+              - ${var.silver_inventory_checkpoint_path}
               - --run-date
               - "{{job.parameters.run_date}}"
           environment_key: default
@@ -99,18 +114,3 @@ resources:
             job_id: ${resources.jobs.supply_chain_silver_transform.id}
             job_parameters:
               run_date: "{{job.parameters.run_date}}"
-        - task_key: transform_silver_inventory
-          spark_python_task:
-            python_file: ../src/silver/build_silver.py
-            parameters:
-              - --catalog
-              - ${var.catalog_name}
-              - --schema
-              - ${var.schema_name}
-              - --entity
-              - inventory
-              - --checkpoint-path
-              - ${var.silver_inventory_checkpoint_path}
-              - --run-date
-              - "{{job.parameters.run_date}}"
-          environment_key: default
