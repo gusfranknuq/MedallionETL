@@ -54,30 +54,38 @@ def parse_args() -> argparse.Namespace:
 
 def clean_sales(df):
     return (
-        df.filter(F.col("sale_id").isNotNull())
-        .filter(F.col("product_id").isNotNull())
-        .withColumn("sale_id", F.col("sale_id").cast("string"))
-        .withColumn("product_id", F.col("product_id").cast("string"))
-        .withColumn("quantity", F.col("quantity").cast("int"))
-        .withColumn("unit_price", F.col("unit_price").cast("double"))
-        .withColumn("sale_ts", F.to_timestamp("sale_ts"))
+        df.filter(F.col("transaction_id").isNotNull())
+        .filter(F.col("customer_id").isNotNull())
+        .withColumn("sale_id", F.col("transaction_id").cast("string"))
+        .withColumn("customer_id", F.col("customer_id").cast("string"))
+        .withColumn("store_id", F.col("store_id").cast("string"))
+        .withColumn("sale_ts", F.to_timestamp("timestamp"))
+        .withColumn("item", F.explode_outer(F.col("payload.items")))
+        .withColumn("sku", F.col("item.sku").cast("string"))
+        .withColumn("quantity", F.col("item.qty").cast("int"))
+        .withColumn("unit_price", F.col("item.price").cast("double"))
+        .withColumn("order_total", F.col("payload.total").cast("double"))
+        .withColumn("payment_method", F.col("payload.payment_method").cast("string"))
+        .withColumn("line_amount", F.col("quantity") * F.col("unit_price"))
+        .drop("item")
+        .filter(F.col("sku").isNotNull())
         .filter(F.col("quantity") > 0)
         .filter(F.col("unit_price") >= 0)
-        .dropDuplicates(["sale_id"])
+        .dropDuplicates(["sale_id", "sku"])
     )
 
 
 def clean_inventory(df):
     return (
-        df.filter(F.col("inventory_id").isNotNull())
-        .filter(F.col("product_id").isNotNull())
-        .withColumn("inventory_id", F.col("inventory_id").cast("string"))
-        .withColumn("product_id", F.col("product_id").cast("string"))
-        .withColumn("location_id", F.col("location_id").cast("string"))
-        .withColumn("on_hand_qty", F.col("on_hand_qty").cast("int"))
-        .withColumn("updated_ts", F.to_timestamp("updated_ts"))
-        .filter(F.col("on_hand_qty") >= 0)
-        .dropDuplicates(["inventory_id"])
+        df.filter(F.col("sku").isNotNull())
+        .filter(F.col("store_id").isNotNull())
+        .withColumn("sku", F.col("sku").cast("string"))
+        .withColumn("store_id", F.col("store_id").cast("string"))
+        .withColumn("status", F.col("status").cast("string"))
+        .withColumn("stock_level", F.col("stock_level").cast("int"))
+        .withColumn("snapshot_ts", F.to_timestamp("snapshot_time"))
+        .filter(F.col("stock_level") >= 0)
+        .dropDuplicates(["sku", "store_id", "snapshot_ts"])
     )
 
 
@@ -101,7 +109,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     output_df = (
         transformed_df.withColumn("_silver_ingest_ts", F.current_timestamp())
-        .withColumn("_run_date", F.lit(run_date_value))
+        .withColumn(
+            "_run_date",
+            F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
+        )
     )
 
     query = (
