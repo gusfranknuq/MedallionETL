@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Transform Bronze supply chain tables into Silver Delta tables with DataFrame API."
     )
-    parser.add_argument("--catalog", default="workspace", help="Unity Catalog name")
+    parser.add_argument("--catalog", default="supply_chain", help="Unity Catalog name")
     parser.add_argument("--schema", default="supply_chain", help="Unity Catalog schema name")
     parser.add_argument(
         "--entity",

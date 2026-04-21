@@ -31,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Ingest raw supply chain data into a Bronze Delta table with Auto Loader."
     )
-    parser.add_argument("--catalog", default="main", help="Unity Catalog name")
+    parser.add_argument("--catalog", default="supply_chain", help="Unity Catalog name")
     parser.add_argument("--schema", default="supply_chain", help="Unity Catalog schema name")
     parser.add_argument(
         "--source-path",
@@ -74,8 +74,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
     schema = validate_identifier(args.schema, "schema")
     bronze_table = validate_identifier(args.bronze_table, "bronze_table")
 
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
     run_date_value = validate_run_date(args.run_date)
+    table_name = f"{catalog}.{schema}.{bronze_table}"
 
     source_df = (
         spark.readStream.format("cloudFiles")
@@ -86,8 +86,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .option("pathGlobFilter", args.source_file_pattern)
         .load(args.source_path)
         .withColumn("_ingest_ts", F.current_timestamp())
-        .withColumn("_source_file", F.input_file_name())
-        .withColumn("_run_date", F.lit(run_date_value))
+        .withColumn("_source_file", F.col("_metadata.file_path"))
+        .withColumn("_run_date", F.lit(run_date_value).cast("string"))
     )
 
     query = (
@@ -95,7 +95,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .option("checkpointLocation", args.checkpoint_path)
         .trigger(availableNow=True)
         .outputMode("append")
-        .toTable(f"{catalog}.{schema}.{bronze_table}")
+        .toTable(table_name)
     )
     query.awaitTermination()
 
