@@ -1,15 +1,15 @@
 resources:
   jobs:
-    supply_chain_bronze_ingestion:
-      name: supply_chain_bronze_ingestion
+    supply_chain_bronze_ingest:
+      name: supply_chain_bronze_ingest
       environments:
         - environment_key: default
           spec:
             client: "1"
       tasks:
-        - task_key: ingest_raw_sales
+        - task_key: ingest_bronze_sales
           spark_python_task:
-            python_file: ../src/bronze/ingest_raw.py
+            python_file: ../src/bronze/ingest_bronze.py
             parameters:
               - --catalog
               - ${var.catalog_name}
@@ -28,9 +28,9 @@ resources:
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default
-        - task_key: ingest_raw_inventory
+        - task_key: ingest_bronze_inventory
           spark_python_task:
-            python_file: ../src/bronze/ingest_raw.py
+            python_file: ../src/bronze/ingest_bronze.py
             parameters:
               - --catalog
               - ${var.catalog_name}
@@ -58,7 +58,7 @@ resources:
       tasks:
         - task_key: transform_silver_sales
           spark_python_task:
-            python_file: ../src/silver/build_silver.py
+            python_file: ../src/silver/transform_silver.py
             parameters:
               - --catalog
               - ${var.catalog_name}
@@ -73,7 +73,7 @@ resources:
           environment_key: default
         - task_key: transform_silver_inventory
           spark_python_task:
-            python_file: ../src/silver/build_silver.py
+            python_file: ../src/silver/transform_silver.py
             parameters:
               - --catalog
               - ${var.catalog_name}
@@ -86,6 +86,39 @@ resources:
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default
+    supply_chain_gold_serve:
+      name: supply_chain_gold_serve
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: build_gold_daily_sales
+          spark_python_task:
+            python_file: ../src/gold/serve_gold.py
+            parameters:
+              - --catalog
+              - ${var.catalog_name}
+              - --schema
+              - ${var.schema_name}
+              - --entity
+              - sales
+              - --job-run-id
+              - "{{job.run_id}}"
+          environment_key: default
+        - task_key: build_gold_low_stock_alerts
+          spark_python_task:
+            python_file: ../src/gold/serve_gold.py
+            parameters:
+              - --catalog
+              - ${var.catalog_name}
+              - --schema
+              - ${var.schema_name}
+              - --entity
+              - inventory
+              - --job-run-id
+              - "{{job.run_id}}"
+          environment_key: default
     supply_chain_medallion_orchestration:
       name: supply_chain_medallion_orchestration
       environments:
@@ -95,12 +128,17 @@ resources:
       tasks:
         - task_key: run_bronze_job
           run_job_task:
-            job_id: ${resources.jobs.supply_chain_bronze_ingestion.id}
+            job_id: ${resources.jobs.supply_chain_bronze_ingest.id}
         - task_key: run_silver_job
           depends_on:
             - task_key: run_bronze_job
           run_job_task:
             job_id: ${resources.jobs.supply_chain_silver_transform.id}
+        - task_key: run_gold_job
+          depends_on:
+            - task_key: run_silver_job
+          run_job_task:
+            job_id: ${resources.jobs.supply_chain_gold_serve.id}
     supply_chain_unit_tests:
       name: supply_chain_unit_tests
       environments:

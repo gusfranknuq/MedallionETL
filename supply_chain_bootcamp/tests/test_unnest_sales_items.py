@@ -3,7 +3,7 @@ import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql import types as T
 
-from src.silver.build_silver import unnest_sales_items
+from src.silver.transform_silver import unnest_sales_items
 
 
 @pytest.fixture(scope="session")

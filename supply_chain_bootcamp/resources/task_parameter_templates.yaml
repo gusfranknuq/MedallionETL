@@ -1,6 +1,6 @@
 bronze_ingestion:
-  ingest_raw_sales:
-    script: ../src/bronze/ingest_raw.py
+  ingest_bronze_sales:
+    script: ../src/bronze/ingest_bronze.py
     required_flags:
       - --catalog
       - --schema
@@ -20,8 +20,8 @@ bronze_ingestion:
       --schema-location: ${var.sales_schema_location}
       --job-run-id: "{{job.run_id}}"
 
-  ingest_raw_inventory:
-    script: ../src/bronze/ingest_raw.py
+  ingest_bronze_inventory:
+    script: ../src/bronze/ingest_bronze.py
     required_flags:
       - --catalog
       - --schema
@@ -41,9 +41,9 @@ bronze_ingestion:
       --schema-location: ${var.inventory_schema_location}
       --job-run-id: "{{job.run_id}}"
 
-silver_transform:
+silver_transformations:
   transform_silver_sales:
-    script: ../src/silver/build_silver.py
+    script: ../src/silver/transform_silver.py
     required_flags:
       - --catalog
       - --schema
@@ -58,7 +58,7 @@ silver_transform:
       --job-run-id: "{{job.run_id}}"
 
   transform_silver_inventory:
-    script: ../src/silver/build_silver.py
+    script: ../src/silver/transform_silver.py
     required_flags:
       - --catalog
       - --schema
@@ -70,6 +70,33 @@ silver_transform:
       --schema: ${var.schema_name}
       --entity: inventory
       --checkpoint-path: ${var.silver_inventory_checkpoint_path}
+      --job-run-id: "{{job.run_id}}"
+
+gold_serving:
+  build_gold_daily_sales:
+    script: ../src/gold/serve_gold.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --entity
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --entity: sales
+      --job-run-id: "{{job.run_id}}"
+
+  build_gold_low_stock_alerts:
+    script: ../src/gold/serve_gold.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --entity
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --entity: inventory
       --job-run-id: "{{job.run_id}}"
 
 unit_tests:

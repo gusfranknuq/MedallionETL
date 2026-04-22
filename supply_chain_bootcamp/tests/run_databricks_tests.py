@@ -12,7 +12,7 @@ PROJECT_ROOT = SCRIPT_PATH.parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.silver.build_silver import unnest_sales_items
+from src.silver.transform_silver import unnest_sales_items
 
 
 def sales_schema() -> T.StructType:
