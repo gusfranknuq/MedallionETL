@@ -101,3 +101,14 @@ resources:
             - task_key: run_bronze_job
           run_job_task:
             job_id: ${resources.jobs.supply_chain_silver_transform.id}
+    supply_chain_unit_tests:
+      name: supply_chain_unit_tests
+      environments:
+        - environment_key: default
+          spec:
+            client: "1"
+      tasks:
+        - task_key: run_unnest_sales_items_tests
+          spark_python_task:
+            python_file: ../tests/run_databricks_tests.py
+          environment_key: default

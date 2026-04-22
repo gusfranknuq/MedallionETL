@@ -71,3 +71,9 @@ silver_transform:
       --entity: inventory
       --checkpoint-path: ${var.silver_inventory_checkpoint_path}
       --job-run-id: "{{job.run_id}}"
+
+unit_tests:
+  run_unnest_sales_items_tests:
+    script: ../tests/run_databricks_tests.py
+    required_flags: []
+    values: {}

@@ -1,23 +1,21 @@
-import pytest
+import inspect
+import sys
+from pathlib import Path
 
 from pyspark.sql import SparkSession
 from pyspark.sql import types as T
 
+SCRIPT_PATH = Path(
+    globals().get("__file__", inspect.currentframe().f_code.co_filename)
+).resolve()
+PROJECT_ROOT = SCRIPT_PATH.parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 from src.silver.build_silver import unnest_sales_items
 
 
-@pytest.fixture(scope="session")
-def spark():
-    session = (
-        SparkSession.builder.master("local[1]")
-        .appName("supply-chain-tests")
-        .getOrCreate()
-    )
-    yield session
-    session.stop()
-
-
-def _sales_schema():
+def sales_schema() -> T.StructType:
     return T.StructType(
         [
             T.StructField("transaction_id", T.StringType(), True),
@@ -51,7 +49,7 @@ def _sales_schema():
     )
 
 
-def test_unnest_sales_items_creates_line_rows(spark):
+def test_creates_line_rows(spark: SparkSession) -> None:
     data = [
         {
             "transaction_id": "tx-1",
@@ -68,7 +66,7 @@ def test_unnest_sales_items_creates_line_rows(spark):
             },
         }
     ]
-    df = spark.createDataFrame(data, schema=_sales_schema())
+    df = spark.createDataFrame(data, schema=sales_schema())
 
     result = unnest_sales_items(df).select(
         "transaction_id",
@@ -82,7 +80,7 @@ def test_unnest_sales_items_creates_line_rows(spark):
         "sales_retail",
     )
 
-    rows = sorted(result.collect(), key=lambda r: r.sku)
+    rows = sorted(result.collect(), key=lambda row: row.sku)
 
     assert len(rows) == 2
     assert rows[0].transaction_id == "tx-1"
@@ -101,7 +99,7 @@ def test_unnest_sales_items_creates_line_rows(spark):
     assert rows[1].sales_retail == 5.0
 
 
-def test_unnest_sales_items_handles_missing_items_with_nulls(spark):
+def test_handles_missing_items_with_nulls(spark: SparkSession) -> None:
     data = [
         {
             "transaction_id": "tx-2",
@@ -111,7 +109,7 @@ def test_unnest_sales_items_handles_missing_items_with_nulls(spark):
             "payload": {"items": None, "total": 0.0, "payment_method": None},
         }
     ]
-    df = spark.createDataFrame(data, schema=_sales_schema())
+    df = spark.createDataFrame(data, schema=sales_schema())
 
     result = unnest_sales_items(df).select(
         "transaction_id", "sku", "sales_qty", "unit_price"
@@ -123,3 +121,17 @@ def test_unnest_sales_items_handles_missing_items_with_nulls(spark):
     assert rows[0].sku is None
     assert rows[0].sales_qty is None
     assert rows[0].unit_price is None
+
+
+def main() -> None:
+    spark = SparkSession.builder.appName("supply-chain-unit-tests").getOrCreate()
+    try:
+        test_creates_line_rows(spark)
+        test_handles_missing_items_with_nulls(spark)
+        print("Databricks tests passed: unnest_sales_items")
+    finally:
+        spark.stop()
+
+
+if __name__ == "__main__":
+    main()
