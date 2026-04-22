@@ -9,7 +9,6 @@ from pyspark.sql.window import Window
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-RUN_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 logging.basicConfig(level=logging.INFO)
 
 
@@ -18,14 +17,6 @@ def validate_identifier(value: str, name: str) -> str:
         raise ValueError(
             f"{name} must match [A-Za-z_][A-Za-z0-9_]* for safe table/schema creation"
         )
-    return value
-
-
-def validate_run_date(value: str | None) -> str | None:
-    if value is None or value == "":
-        return None
-    if not RUN_DATE_PATTERN.match(value):
-        raise ValueError("run_date must be in YYYY-MM-DD format")
     return value
 
 
@@ -47,9 +38,9 @@ def parse_args() -> argparse.Namespace:
         help="Checkpoint location for this Silver streaming query",
     )
     parser.add_argument(
-        "--run-date",
+        "--job-run-id",
         default=None,
-        help="Optional run date parameter passed by workflow tasks",
+        help="Optional Databricks job run id for lineage",
     )
     return parser.parse_args()
 
@@ -60,58 +51,66 @@ def clean_sales(df):
         .filter(F.col("transaction_id").isNotNull())
         .filter(F.col("customer_id").isNotNull())
         .filter(F.col("sku").isNotNull())
-        .filter(F.col("quantity") > 0)
+        .filter(F.col("sales_qty") > 0)
         .filter(F.col("unit_price") >= 0)
-        .dropDuplicates(["sale_id", "sku"])
+        .dropDuplicates(["transaction_id", "sku"])
+        .select(
+            "transaction_id",
+            "sale_timestamp",
+            "store_id",
+            "customer_id",
+            "sku",
+            "payment_method",
+            "sales_qty",
+            "sales_retail",
+            "unit_price",
+        )
     )
 
 
 def unnest_sales_items(df):
     return (
-        df.withColumn("sale_id", F.col("transaction_id").cast("string"))
+        df.withColumn("transaction_id", F.col("transaction_id").cast("string"))
         .withColumn("customer_id", F.col("customer_id").cast("string"))
         .withColumn("store_id", F.col("store_id").cast("string"))
-        .withColumn("sale_ts", F.to_timestamp("timestamp"))
+        .withColumn("sale_timestamp", F.to_timestamp("timestamp"))
         .withColumn("item", F.explode_outer(F.col("payload.items")))
         .withColumn("sku", F.col("item.sku").cast("string"))
-        .withColumn("quantity", F.col("item.qty").cast("int"))
+        .withColumn("sales_qty", F.col("item.qty").cast("int"))
         .withColumn("unit_price", F.col("item.price").cast("double"))
-        .withColumn("order_total", F.col("payload.total").cast("double"))
         .withColumn("payment_method", F.col("payload.payment_method").cast("string"))
-        .withColumn("line_amount", F.col("quantity") * F.col("unit_price"))
+        .withColumn("sales_retail", F.col("sales_qty") * F.col("unit_price"))
         .drop("item")
     )
 
 
 def clean_inventory(df):
     return (
-        df.filter(F.col("sku").isNotNull())
-        .filter(F.col("store_id").isNotNull())
-        .withColumn("sku", F.col("sku").cast("string"))
+        df.withColumn("latest_snapshot_time", F.to_timestamp("snapshot_time"))
         .withColumn("store_id", F.col("store_id").cast("string"))
-        .withColumn("status", F.col("status").cast("string"))
+        .withColumn("sku", F.col("sku").cast("string"))
         .withColumn("stock_level", F.col("stock_level").cast("int"))
-        .withColumn("snapshot_ts", F.to_timestamp("snapshot_time"))
-        .filter(F.col("snapshot_ts").isNotNull())
+        .withColumn("status", F.col("status").cast("string"))
+        .filter(F.col("sku").isNotNull())
+        .filter(F.col("store_id").isNotNull())
+        .filter(F.col("latest_snapshot_time").isNotNull())
         .filter(F.col("stock_level") >= 0)
-        .dropDuplicates(["sku", "store_id", "snapshot_ts"])
+        .dropDuplicates(["sku", "store_id", "latest_snapshot_time"])
+        .select("latest_snapshot_time", "store_id", "sku", "stock_level", "status")
     )
 
 
-def merge_inventory_batch(batch_df, catalog, schema, silver_table, run_date_value):
+def merge_inventory_batch(batch_df, catalog, schema, silver_table, job_run_id):
     spark = batch_df.sparkSession
     table_name = f"{catalog}.{schema}.{silver_table}"
 
-    prepared_df = (
-        clean_inventory(batch_df)
-        .withColumn("_silver_ingest_ts", F.current_timestamp())
-        .withColumn(
-            "_run_date",
-            F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
-        )
+    prepared_df = clean_inventory(batch_df).withColumn(
+        "_job_run_id", F.lit(job_run_id).cast("string")
     )
 
-    latest_window = Window.partitionBy("sku", "store_id").orderBy(F.col("snapshot_ts").desc())
+    latest_window = Window.partitionBy("sku", "store_id").orderBy(
+        F.col("latest_snapshot_time").desc()
+    )
     latest_df = (
         prepared_df.withColumn("_latest_rank", F.row_number().over(latest_window))
         .filter(F.col("_latest_rank") == 1)
@@ -125,7 +124,9 @@ def merge_inventory_batch(batch_df, catalog, schema, silver_table, run_date_valu
     (
         target.alias("t")
         .merge(latest_df.alias("s"), "t.sku = s.sku AND t.store_id = s.store_id")
-        .whenMatchedUpdateAll(condition="s.snapshot_ts >= t.snapshot_ts")
+        .whenMatchedUpdateAll(
+            condition="s.latest_snapshot_time >= t.latest_snapshot_time"
+        )
         .whenNotMatchedInsertAll()
         .execute()
     )
@@ -137,7 +138,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
     catalog = validate_identifier(args.catalog, "catalog")
     schema = validate_identifier(args.schema, "schema")
     entity = args.entity
-    run_date_value = validate_run_date(args.run_date)
 
     bronze_table = f"bronze_{entity}"
     silver_table = f"silver_{entity}"
@@ -145,17 +145,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
     source_df = spark.readStream.table(f"{catalog}.{schema}.{bronze_table}")
 
     if entity == "sales":
-        transformed_df = clean_sales(source_df)
-        output_df = (
-            transformed_df.withColumn("_silver_ingest_ts", F.current_timestamp())
-            .withColumn(
-                "_run_date",
-                F.coalesce(F.col("_run_date").cast("string"), F.lit(run_date_value).cast("string")),
-            )
-        )
-
         query = (
-            output_df.writeStream.format("delta")
+            clean_sales(source_df)
+            .withColumn("_job_run_id", F.lit(args.job_run_id).cast("string"))
+            .writeStream.format("delta")
             .option("checkpointLocation", args.checkpoint_path)
             .trigger(availableNow=True)
             .outputMode("append")
@@ -171,7 +164,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
                     catalog,
                     schema,
                     silver_table,
-                    run_date_value,
+                    args.job_run_id,
                 )
             )
             .start()

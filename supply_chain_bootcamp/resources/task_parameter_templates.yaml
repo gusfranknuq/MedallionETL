@@ -1,0 +1,73 @@
+bronze_ingestion:
+  ingest_raw_sales:
+    script: ../src/bronze/ingest_raw.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --source-path
+      - --source-file-pattern
+      - --bronze-table
+      - --checkpoint-path
+      - --schema-location
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --source-path: ${var.source_path}
+      --source-file-pattern: ${var.sales_file_pattern}
+      --bronze-table: bronze_sales
+      --checkpoint-path: ${var.sales_checkpoint_path}
+      --schema-location: ${var.sales_schema_location}
+      --job-run-id: "{{job.run_id}}"
+
+  ingest_raw_inventory:
+    script: ../src/bronze/ingest_raw.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --source-path
+      - --source-file-pattern
+      - --bronze-table
+      - --checkpoint-path
+      - --schema-location
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --source-path: ${var.source_path}
+      --source-file-pattern: ${var.inventory_file_pattern}
+      --bronze-table: bronze_inventory
+      --checkpoint-path: ${var.inventory_checkpoint_path}
+      --schema-location: ${var.inventory_schema_location}
+      --job-run-id: "{{job.run_id}}"
+
+silver_transform:
+  transform_silver_sales:
+    script: ../src/silver/build_silver.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --entity
+      - --checkpoint-path
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --entity: sales
+      --checkpoint-path: ${var.silver_sales_checkpoint_path}
+      --job-run-id: "{{job.run_id}}"
+
+  transform_silver_inventory:
+    script: ../src/silver/build_silver.py
+    required_flags:
+      - --catalog
+      - --schema
+      - --entity
+      - --checkpoint-path
+      - --job-run-id
+    values:
+      --catalog: ${var.catalog_name}
+      --schema: ${var.schema_name}
+      --entity: inventory
+      --checkpoint-path: ${var.silver_inventory_checkpoint_path}
+      --job-run-id: "{{job.run_id}}"

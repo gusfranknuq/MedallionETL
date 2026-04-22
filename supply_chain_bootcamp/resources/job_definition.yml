@@ -6,9 +6,6 @@ resources:
         - environment_key: default
           spec:
             client: "1"
-      parameters:
-        - name: run_date
-          default: ""
       tasks:
         - task_key: ingest_raw_sales
           spark_python_task:
@@ -28,8 +25,8 @@ resources:
               - ${var.sales_checkpoint_path}
               - --schema-location
               - ${var.sales_schema_location}
-              - --run-date
-              - "{{job.parameters.run_date}}"
+              - --job-run-id
+              - "{{job.run_id}}"
           environment_key: default
         - task_key: ingest_raw_inventory
           spark_python_task:
@@ -49,8 +46,8 @@ resources:
               - ${var.inventory_checkpoint_path}
               - --schema-location
               - ${var.inventory_schema_location}
-              - --run-date
-              - "{{job.parameters.run_date}}"
+              - --job-run-id
+              - "{{job.run_id}}"
           environment_key: default
     supply_chain_silver_transform:
       name: supply_chain_silver_transform
@@ -58,9 +55,6 @@ resources:
         - environment_key: default
           spec:
             client: "1"
-      parameters:
-        - name: run_date
-          default: ""
       tasks:
         - task_key: transform_silver_sales
           spark_python_task:
@@ -74,8 +68,8 @@ resources:
               - sales
               - --checkpoint-path
               - ${var.silver_sales_checkpoint_path}
-               - --run-date
-               - "{{job.parameters.run_date}}"
+              - --job-run-id
+              - "{{job.run_id}}"
           environment_key: default
         - task_key: transform_silver_inventory
           spark_python_task:
@@ -89,8 +83,8 @@ resources:
               - inventory
               - --checkpoint-path
               - ${var.silver_inventory_checkpoint_path}
-              - --run-date
-              - "{{job.parameters.run_date}}"
+              - --job-run-id
+              - "{{job.run_id}}"
           environment_key: default
     supply_chain_medallion_orchestration:
       name: supply_chain_medallion_orchestration
@@ -98,19 +92,12 @@ resources:
         - environment_key: default
           spec:
             client: "1"
-      parameters:
-        - name: run_date
-          default: ""
       tasks:
         - task_key: run_bronze_job
           run_job_task:
             job_id: ${resources.jobs.supply_chain_bronze_ingestion.id}
-            job_parameters:
-              run_date: "{{job.parameters.run_date}}"
         - task_key: run_silver_job
           depends_on:
             - task_key: run_bronze_job
           run_job_task:
             job_id: ${resources.jobs.supply_chain_silver_transform.id}
-            job_parameters:
-              run_date: "{{job.parameters.run_date}}"

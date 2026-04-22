@@ -7,7 +7,6 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-RUN_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 logging.basicConfig(level=logging.INFO)
 
 
@@ -16,14 +15,6 @@ def validate_identifier(value: str, name: str) -> str:
         raise ValueError(
             f"{name} must match [A-Za-z_][A-Za-z0-9_]* for safe table/schema creation"
         )
-    return value
-
-
-def validate_run_date(value: str | None) -> str | None:
-    if value is None or value == "":
-        return None
-    if not RUN_DATE_PATTERN.match(value):
-        raise ValueError("run_date must be in YYYY-MM-DD format")
     return value
 
 
@@ -60,9 +51,9 @@ def parse_args() -> argparse.Namespace:
         help="Cloud storage path where Auto Loader persists inferred schema",
     )
     parser.add_argument(
-        "--run-date",
+        "--job-run-id",
         default=None,
-        help="Optional run date parameter passed by workflow tasks",
+        help="Optional Databricks job run id for lineage",
     )
     return parser.parse_args()
 
@@ -74,7 +65,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
     schema = validate_identifier(args.schema, "schema")
     bronze_table = validate_identifier(args.bronze_table, "bronze_table")
 
-    run_date_value = validate_run_date(args.run_date)
     table_name = f"{catalog}.{schema}.{bronze_table}"
 
     source_df = (
@@ -87,7 +77,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         .load(args.source_path)
         .withColumn("_ingest_ts", F.current_timestamp())
         .withColumn("_source_file", F.col("_metadata.file_path"))
-        .withColumn("_run_date", F.lit(run_date_value).cast("string"))
+        .withColumn("_job_run_id", F.lit(args.job_run_id).cast("string"))
     )
 
     query = (
