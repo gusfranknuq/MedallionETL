@@ -11,20 +11,8 @@ resources:
           spark_python_task:
             python_file: ../src/bronze/ingest_bronze.py
             parameters:
-              - --catalog
-              - ${var.catalog_name}
-              - --schema
-              - ${var.schema_name}
-              - --source-path
-              - ${var.source_path}
-              - --source-file-pattern
-              - ${var.sales_file_pattern}
-              - --bronze-table
-              - bronze_sales
-              - --checkpoint-path
-              - ${var.sales_checkpoint_path}
-              - --schema-location
-              - ${var.sales_schema_location}
+              - --task-name
+              - ingest_bronze_sales
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default
@@ -32,20 +20,8 @@ resources:
           spark_python_task:
             python_file: ../src/bronze/ingest_bronze.py
             parameters:
-              - --catalog
-              - ${var.catalog_name}
-              - --schema
-              - ${var.schema_name}
-              - --source-path
-              - ${var.source_path}
-              - --source-file-pattern
-              - ${var.inventory_file_pattern}
-              - --bronze-table
-              - bronze_inventory
-              - --checkpoint-path
-              - ${var.inventory_checkpoint_path}
-              - --schema-location
-              - ${var.inventory_schema_location}
+              - --task-name
+              - ingest_bronze_inventory
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bronze_ingest_config.schema.json",
+  "title": "Bronze Ingest Config",
+  "type": "object",
+  "required": [
+    "source_file_path",
+    "source_file_pattern",
+    "file_type",
+    "bronze_destination_table",
+    "schema_location",
+    "checkpoint_path"
+  ],
+  "properties": {
+    "catalog": {
+      "type": "string",
+      "description": "Unity Catalog catalog. Defaults to CLI --catalog."
+    },
+    "schema": {
+      "type": "string",
+      "description": "Unity Catalog schema. Defaults to CLI --schema."
+    },
+    "source_file_path": {
+      "type": "string",
+      "description": "Cloud storage base path to ingest from."
+    },
+    "source_file_pattern": {
+      "type": "string",
+      "description": "Glob filter passed to pathGlobFilter."
+    },
+    "file_type": {
+      "type": "string",
+      "description": "Source format for Auto Loader cloudFiles.format (csv, json, parquet, avro, text, binaryFile)."
+    },
+    "bronze_destination_table": {
+      "type": "string",
+      "description": "Bronze target table name without catalog/schema prefix."
+    },
+    "schema_location": {
+      "type": "string",
+      "description": "Schema tracking path for Auto Loader."
+    },
+    "checkpoint_path": {
+      "type": "string",
+      "description": "Checkpoint path for streaming write."
+    },
+    "job_run_id": {
+      "type": ["string", "null"],
+      "description": "Optional Databricks job run id for lineage."
+    },
+    "reader_options": {
+      "type": "object",
+      "description": "Format-specific options passed directly to Spark reader option().",
+      "properties": {
+        "lineSep": { "type": ["string", "number", "boolean"] },
+        "delimiter": { "type": ["string", "number", "boolean"] },
+        "escape": { "type": ["string", "number", "boolean"] },
+        "header": { "type": ["string", "number", "boolean"] },
+        "encoding": { "type": ["string", "number", "boolean"] },
+        "quote": { "type": ["string", "number", "boolean"] },
+        "multiLine": { "type": ["string", "number", "boolean"] },
+        "sheetName": { "type": ["string", "number", "boolean"] },
+        "sheetIndex": { "type": ["string", "number", "boolean"] },
+        "dateFormat": { "type": ["string", "number", "boolean"] },
+        "timestampFormat": { "type": ["string", "number", "boolean"] },
+        "nullValue": { "type": ["string", "number", "boolean"] },
+        "mode": { "type": ["string", "number", "boolean"] },
+        "badRecordsPath": { "type": ["string", "number", "boolean"] },
+        "rescuedDataColumn": { "type": ["string", "number", "boolean"] }
+      },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    },
+    "autoloader_options": {
+      "type": "object",
+      "description": "Additional cloudFiles options merged with defaults.",
+      "properties": {
+        "cloudFiles.inferColumnTypes": { "type": ["string", "number", "boolean"] },
+        "cloudFiles.schemaEvolutionMode": { "type": ["string", "number", "boolean"] }
+      },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"]
+      }
+    },
+    "write_options": {
+      "type": "object",
+      "description": "Write-stream behavior.",
+      "properties": {
+        "output_mode": {
+          "type": "string",
+          "enum": ["append", "update", "complete"]
+        },
+        "trigger_available_now": {
+          "type": ["string", "boolean"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

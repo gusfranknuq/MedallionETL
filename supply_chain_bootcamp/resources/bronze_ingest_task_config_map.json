@@ -1,0 +1,4 @@
+{
+  "ingest_bronze_sales": "../../resources/bronze_ingest_config.sales.example.json",
+  "ingest_bronze_inventory": "../../resources/bronze_ingest_config.inventory.example.json"
+}

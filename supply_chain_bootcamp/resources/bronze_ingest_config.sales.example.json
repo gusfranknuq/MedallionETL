@@ -1,0 +1,22 @@
+{
+  "catalog": "supply_chain",
+  "schema": "supply_chain",
+  "source_file_path": "/Volumes/supply_chain/supply_chain/raw_sample_files",
+  "source_file_pattern": "sales_raw.jsonl",
+  "file_type": "json",
+  "bronze_destination_table": "bronze_sales",
+  "schema_location": "/Volumes/supply_chain/supply_chain/raw_sample_files/_state/schemas/bronze_sales",
+  "checkpoint_path": "/Volumes/supply_chain/supply_chain/raw_sample_files/_state/checkpoints/bronze_sales",
+  "job_run_id": null,
+  "reader_options": {
+    "multiLine": false
+  },
+  "autoloader_options": {
+    "cloudFiles.inferColumnTypes": true,
+    "cloudFiles.schemaEvolutionMode": "addNewColumns"
+  },
+  "write_options": {
+    "output_mode": "append",
+    "trigger_available_now": true
+  }
+}
