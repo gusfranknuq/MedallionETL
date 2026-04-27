@@ -100,23 +100,24 @@ def _module_dir() -> Path:
 
 def _default_task_config_map_path() -> Path:
     module_dir = _module_dir()
+    map_filename = "pipeline_task_config_map.json"
     candidates = [
-        module_dir.parents[2] / "resources" / "bronze_ingest_task_config_map.json"
+        module_dir.parents[2] / "resources" / map_filename
         if len(module_dir.parents) >= 3
         else None,
-        module_dir.parents[1] / "resources" / "bronze_ingest_task_config_map.json"
+        module_dir.parents[1] / "resources" / map_filename
         if len(module_dir.parents) >= 2
         else None,
-        module_dir / "bronze_ingest_task_config_map.json",
-        Path.cwd().resolve() / "resources" / "bronze_ingest_task_config_map.json",
+        module_dir / map_filename,
+        Path.cwd().resolve() / "resources" / map_filename,
     ]
     for candidate in candidates:
         if candidate and candidate.exists():
             return candidate
     return (
-        module_dir.parents[2] / "resources" / "bronze_ingest_task_config_map.json"
+        module_dir.parents[2] / "resources" / map_filename
         if len(module_dir.parents) >= 3
-        else module_dir / "bronze_ingest_task_config_map.json"
+        else module_dir / map_filename
     )
 
 

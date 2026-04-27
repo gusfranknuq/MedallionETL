@@ -36,14 +36,8 @@ resources:
           spark_python_task:
             python_file: ../src/silver/transform_silver.py
             parameters:
-              - --catalog
-              - ${var.catalog_name}
-              - --schema
-              - ${var.schema_name}
-              - --entity
-              - sales
-              - --checkpoint-path
-              - ${var.silver_sales_checkpoint_path}
+              - --task-name
+              - transform_silver_sales
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default
@@ -51,14 +45,8 @@ resources:
           spark_python_task:
             python_file: ../src/silver/transform_silver.py
             parameters:
-              - --catalog
-              - ${var.catalog_name}
-              - --schema
-              - ${var.schema_name}
-              - --entity
-              - inventory
-              - --checkpoint-path
-              - ${var.silver_inventory_checkpoint_path}
+              - --task-name
+              - transform_silver_inventory
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default

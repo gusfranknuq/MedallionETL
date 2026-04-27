@@ -1,16 +1,54 @@
+"""Config-driven silver transform pipeline.
+
+Mirrors the bronze ``run_pipeline`` shape: each source file/entity is
+described by a JSON pipeline config (``resources/pipeline_config.*.json``),
+and this module reads the ``silver`` block to:
+
+1. Stream from the configured bronze table.
+2. Apply the configured ``custom_cleaner`` (e.g. unnest sales items).
+3. Evaluate ``column_definitions`` to project the cleaned frame onto the
+   silver target schema.
+4. Resolve dimension surrogate ids via :func:`dim_handler.dim_handler`.
+5. MERGE into the configured silver target. The MERGE keys and the set of
+   updatable fact columns are read from ``silver_table_config_l`` -- the
+   pipeline config does not duplicate that knowledge. Only the FACT columns
+   that are actually present on the stage frame are updated, so e.g. an
+   inventory file does not clobber sales metrics with NULLs (and vice versa).
+"""
+
+from __future__ import annotations
+
 import argparse
 import logging
 import re
+from typing import Any
 
 from delta.tables import DeltaTable
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.window import Window
+
+# Reuse bronze's config loader so the two layers stay in lockstep.
+from src.bronze.ingest_bronze import (
+    _load_json_with_resolved_path,
+    _parse_task_config_map,
+)
+from src.silver.cleaners import get_cleaner
+from src.silver.dim_handler import dim_handler
+from src.silver.table_config import SilverTableSpec, get_table_spec
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+
+# Re-exported for backwards compatibility with existing tests.
+from src.silver.cleaners import unnest_sales_items  # noqa: E402, F401
+
+
+# --------------------------------------------------------------------------- #
+# CLI
+# --------------------------------------------------------------------------- #
 
 def validate_identifier(value: str, name: str) -> str:
     if not IDENTIFIER_PATTERN.match(value):
@@ -22,21 +60,25 @@ def validate_identifier(value: str, name: str) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Transform Bronze supply chain tables into Silver Delta tables with DataFrame API."
+        description="Config-driven Silver transform from a Bronze table to a Silver fact table."
+    )
+    parser.add_argument(
+        "--config-path",
+        default=None,
+        help="Path to a pipeline JSON config that contains a 'silver' block.",
+    )
+    parser.add_argument(
+        "--task-name",
+        default=None,
+        help="Task name used to look up a pipeline config from the task-to-config map.",
+    )
+    parser.add_argument(
+        "--task-config-map-path",
+        default=None,
+        help="Optional override path for the task-to-config JSON map.",
     )
     parser.add_argument("--catalog", default="supply_chain", help="Unity Catalog name")
     parser.add_argument("--schema", default="supply_chain", help="Unity Catalog schema name")
-    parser.add_argument(
-        "--entity",
-        required=True,
-        choices=["sales", "inventory"],
-        help="Domain entity to clean into Silver layer",
-    )
-    parser.add_argument(
-        "--checkpoint-path",
-        required=True,
-        help="Checkpoint location for this Silver streaming query",
-    )
     parser.add_argument(
         "--job-run-id",
         default=None,
@@ -45,130 +87,270 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def clean_sales(df):
-    return (
-        unnest_sales_items(df)
-        .filter(F.col("transaction_id").isNotNull())
-        .filter(F.col("customer_id").isNotNull())
-        .filter(F.col("sku").isNotNull())
-        .filter(F.col("sales_qty") > 0)
-        .filter(F.col("unit_price") >= 0)
-        .dropDuplicates(["transaction_id", "sku"])
-        .select(
-            "transaction_id",
-            "sale_timestamp",
-            "store_id",
-            "customer_id",
-            "sku",
-            "payment_method",
-            "sales_qty",
-            "sales_retail",
-            "unit_price",
+# --------------------------------------------------------------------------- #
+# Config resolution
+# --------------------------------------------------------------------------- #
+
+def _resolve_silver_config(args: argparse.Namespace) -> dict[str, Any]:
+    selected_config_path = args.config_path
+    if not selected_config_path and args.task_name:
+        task_config_map = _parse_task_config_map(args.task_config_map_path)
+        selected_config_path = task_config_map.get(args.task_name)
+        if not selected_config_path:
+            known = ", ".join(sorted(task_config_map.keys()))
+            raise ValueError(
+                f"Task name '{args.task_name}' is not configured in the task config map. "
+                f"Known tasks: {known}"
+            )
+
+    if not selected_config_path:
+        raise ValueError(
+            "transform_silver requires either --config-path or --task-name to locate "
+            "a pipeline config with a 'silver' block."
         )
-    )
+
+    config = _load_json_with_resolved_path(selected_config_path)
+    if not isinstance(config, dict):
+        raise ValueError("Pipeline config must be a JSON object")
+
+    silver_cfg = config.get("silver")
+    if not isinstance(silver_cfg, dict):
+        raise ValueError(
+            f"Pipeline config '{selected_config_path}' has no 'silver' block; "
+            "transform_silver cannot run."
+        )
+
+    required = [
+        "source_bronze_table",
+        "silver_table",
+        "checkpoint_path",
+        "scope",
+        "column_definitions",
+    ]
+    for key in required:
+        if key not in silver_cfg:
+            raise ValueError(f"silver config is missing required field: {key}")
+
+    scope = silver_cfg["scope"]
+    if not isinstance(scope, dict) or "retailerid" not in scope or "countryid" not in scope:
+        raise ValueError("silver.scope must be an object with retailerid and countryid")
+
+    return {
+        "catalog": config.get("catalog", args.catalog),
+        "schema": config.get("schema", args.schema),
+        "source_bronze_table": silver_cfg["source_bronze_table"],
+        "silver_table": silver_cfg["silver_table"],
+        "custom_cleaner": silver_cfg.get("custom_cleaner"),
+        "checkpoint_path": silver_cfg["checkpoint_path"],
+        "scope": {
+            "retailerid": int(scope["retailerid"]),
+            "countryid": int(scope["countryid"]),
+        },
+        "dimensions": silver_cfg.get("dimensions", []),
+        "column_definitions": silver_cfg["column_definitions"],
+        "job_run_id": config.get("job_run_id") or args.job_run_id,
+    }
 
 
-def unnest_sales_items(df):
-    return (
-        df.withColumn("transaction_id", F.col("transaction_id").cast("string"))
-        .withColumn("customer_id", F.col("customer_id").cast("string"))
-        .withColumn("store_id", F.col("store_id").cast("string"))
-        .withColumn("sale_timestamp", F.to_timestamp("timestamp"))
-        .withColumn("item", F.explode_outer(F.col("payload.items")))
-        .withColumn("sku", F.col("item.sku").cast("string"))
-        .withColumn("sales_qty", F.col("item.qty").cast("int"))
-        .withColumn("unit_price", F.col("item.price").cast("double"))
-        .withColumn("payment_method", F.col("payload.payment_method").cast("string"))
-        .withColumn("sales_retail", F.col("sales_qty") * F.col("unit_price"))
-        .drop("item")
-    )
+# --------------------------------------------------------------------------- #
+# Stage-frame helpers
+# --------------------------------------------------------------------------- #
+
+def _apply_column_definitions(
+    df: DataFrame,
+    column_definitions: list[dict[str, str]],
+) -> DataFrame:
+    """Add each ``target`` column from the SQL ``expr`` against ``df``."""
+    out = df
+    for entry in column_definitions:
+        target = entry["target"]
+        expr = entry["expr"]
+        out = out.withColumn(target, F.expr(expr))
+    return out
 
 
-def clean_inventory(df):
-    return (
-        df.withColumn("latest_snapshot_time", F.to_timestamp("snapshot_time"))
-        .withColumn("store_id", F.col("store_id").cast("string"))
-        .withColumn("sku", F.col("sku").cast("string"))
-        .withColumn("stock_level", F.col("stock_level").cast("int"))
-        .withColumn("status", F.col("status").cast("string"))
-        .filter(F.col("sku").isNotNull())
-        .filter(F.col("store_id").isNotNull())
-        .filter(F.col("latest_snapshot_time").isNotNull())
-        .filter(F.col("stock_level") >= 0)
-        .dropDuplicates(["sku", "store_id", "latest_snapshot_time"])
-        .select("latest_snapshot_time", "store_id", "sku", "stock_level", "status")
-    )
+def _attach_scope_columns(df: DataFrame, retailerid: int, countryid: int) -> DataFrame:
+    if "retailerid" not in df.columns:
+        df = df.withColumn("retailerid", F.lit(retailerid).cast("int"))
+    if "countryid" not in df.columns:
+        df = df.withColumn("countryid", F.lit(countryid).cast("int"))
+    return df
 
 
-def merge_inventory_batch(batch_df, catalog, schema, silver_table, job_run_id):
+def _ensure_silver_target_exists(
+    spark: SparkSession,
+    table_fqn: str,
+    stage_with_audit: DataFrame,
+) -> None:
+    if not spark.catalog.tableExists(table_fqn):
+        logger.info("Silver target %s missing; creating empty Delta table", table_fqn)
+        stage_with_audit.limit(0).write.format("delta").saveAsTable(table_fqn)
+
+
+# --------------------------------------------------------------------------- #
+# Per-batch transform + merge
+# --------------------------------------------------------------------------- #
+
+# Audit columns are written by the loader on every row; not driven by config.
+AUDIT_INSERT_COLS = ("insjobid", "modjobid", "ins_ts", "mod_ts")
+AUDIT_UPDATE_COLS = ("modjobid", "mod_ts")
+
+
+def transform_and_merge_batch(
+    batch_df: DataFrame,
+    runtime: dict[str, Any],
+    table_spec: SilverTableSpec,
+) -> None:
+    """Process one streaming microbatch end-to-end.
+
+    1) Custom cleaner -> 2) column_definitions -> 3) dim_handler per dimension
+    -> 4) MERGE into silver target. KEY columns and FACT candidates come from
+    ``table_spec`` (read from silver_table_config_l), not from the pipeline
+    config.
+    """
     spark = batch_df.sparkSession
-    table_name = f"{catalog}.{schema}.{silver_table}"
+    catalog = runtime["catalog"]
+    schema = runtime["schema"]
+    silver_table = runtime["silver_table"]
+    table_fqn = f"{catalog}.{schema}.{silver_table}"
+    retailerid = runtime["scope"]["retailerid"]
+    countryid = runtime["scope"]["countryid"]
+    job_run_id = runtime["job_run_id"]
 
-    prepared_df = clean_inventory(batch_df).withColumn(
-        "_job_run_id", F.lit(job_run_id).cast("string")
+    # Silver only ever processes one bronze run at a time. The job_run_id is
+    # passed explicitly by the orchestrator; we filter bronze to that single
+    # run here so older/newer runs that may also be sitting in bronze are
+    # ignored. _job_run_id is written by ingest_bronze on every row.
+    if "_job_run_id" not in batch_df.columns:
+        raise ValueError(
+            "Bronze source is missing _job_run_id column; "
+            "transform_silver requires it to scope to a single run."
+        )
+    batch_df = batch_df.filter(F.col("_job_run_id") == F.lit(str(job_run_id)))
+
+    if batch_df.rdd.isEmpty():
+        logger.info(
+            "No bronze rows for %s with _job_run_id=%s; skipping",
+            silver_table,
+            job_run_id,
+        )
+        return
+
+    # 1) Custom cleaning. The cleaner is responsible for any aggregation /
+    # dedup needed to produce at most one row per natural key. The MERGE
+    # below will fail loudly if duplicates remain.
+    cleaner = get_cleaner(runtime["custom_cleaner"])
+    stage = cleaner(batch_df)
+
+    # Carry scope onto the stage frame so dim_handler and merge can use them.
+    stage = _attach_scope_columns(stage, retailerid, countryid)
+
+    # 2) Project to silver columns.
+    stage = _apply_column_definitions(stage, runtime["column_definitions"])
+
+    # 3) Resolve each configured dimension (e.g. item, store) onto stage.
+    for dim_entry in runtime["dimensions"]:
+        stage = dim_handler(
+            stage_df=stage,
+            dimension=dim_entry["dimension"],
+            catalog=catalog,
+            schema=schema,
+            retailerid=retailerid,
+            countryid=countryid,
+            job_run_id=job_run_id,
+        )
+
+    # 4) Resolve key + fact columns from the table spec.
+    key_columns = list(table_spec.key_columns)
+
+    missing_keys = [k for k in key_columns if k not in stage.columns]
+    if missing_keys:
+        raise ValueError(
+            f"Stage frame is missing KEY columns {missing_keys} required by "
+            f"silver_table_config_l for {silver_table}. "
+            "Check column_definitions and configured dimensions."
+        )
+
+    # Only update FACT columns the source actually supplies. A sales file
+    # contributes posqty/possales/unitprice; an inventory file contributes
+    # onhandqty/instock; neither should overwrite the other's metrics.
+    fact_columns = [c for c in table_spec.fact_columns if c in stage.columns]
+    if not fact_columns:
+        logger.warning(
+            "No FACT columns for %s present on stage frame; "
+            "merge will only insert empty key rows.",
+            silver_table,
+        )
+
+    select_cols = [F.col(c) for c in [*key_columns, *fact_columns]]
+    final_df = (
+        stage.select(*select_cols)
+        # Drop any rows where a merge key is null -- they'd produce
+        # ambiguous matches in the MERGE.
+        .dropna(subset=key_columns)
+        .withColumn("insjobid", F.lit(job_run_id).cast("string"))
+        .withColumn("modjobid", F.lit(job_run_id).cast("string"))
+        .withColumn("ins_ts", F.current_timestamp())
+        .withColumn("mod_ts", F.current_timestamp())
     )
 
-    latest_window = Window.partitionBy("sku", "store_id").orderBy(
-        F.col("latest_snapshot_time").desc()
-    )
-    latest_df = (
-        prepared_df.withColumn("_latest_rank", F.row_number().over(latest_window))
-        .filter(F.col("_latest_rank") == 1)
-        .drop("_latest_rank")
-    )
+    _ensure_silver_target_exists(spark, table_fqn, final_df)
 
-    if not spark.catalog.tableExists(table_name):
-        latest_df.limit(0).write.format("delta").saveAsTable(table_name)
+    # 5) MERGE: update only the fact columns we actually have + audit.
+    target = DeltaTable.forName(spark, table_fqn)
+    on_clause = " AND ".join(f"t.{k} = s.{k}" for k in key_columns)
+    update_set = {m: F.col(f"s.{m}") for m in fact_columns}
+    for audit_col in AUDIT_UPDATE_COLS:
+        update_set[audit_col] = F.col(f"s.{audit_col}")
 
-    target = DeltaTable.forName(spark, table_name)
     (
         target.alias("t")
-        .merge(latest_df.alias("s"), "t.sku = s.sku AND t.store_id = s.store_id")
-        .whenMatchedUpdateAll(
-            condition="s.latest_snapshot_time >= t.latest_snapshot_time"
-        )
+        .merge(final_df.alias("s"), on_clause)
+        .whenMatchedUpdate(set=update_set)
         .whenNotMatchedInsertAll()
         .execute()
     )
 
 
+# --------------------------------------------------------------------------- #
+# Streaming entry point
+# --------------------------------------------------------------------------- #
+
 def run_pipeline(args: argparse.Namespace) -> None:
     spark = SparkSession.builder.appName("supply_chain_silver_pipeline").getOrCreate()
+    runtime = _resolve_silver_config(args)
 
-    catalog = validate_identifier(args.catalog, "catalog")
-    schema = validate_identifier(args.schema, "schema")
-    entity = args.entity
+    if not runtime["job_run_id"]:
+        raise ValueError(
+            "transform_silver requires --job-run-id (or job_run_id in the config); "
+            "silver scopes the bronze read to a single run."
+        )
 
-    bronze_table = f"bronze_{entity}"
-    silver_table = f"silver_{entity}"
+    catalog = validate_identifier(runtime["catalog"], "catalog")
+    schema = validate_identifier(runtime["schema"], "schema")
+    bronze_table = validate_identifier(
+        runtime["source_bronze_table"], "source_bronze_table"
+    )
+    silver_table = validate_identifier(runtime["silver_table"], "silver_table")
+    runtime["catalog"] = catalog
+    runtime["schema"] = schema
+
+    # Resolve KEY/FACT/AUDIT columns once at startup from silver_table_config_l;
+    # the per-batch loader doesn't need to re-read this metadata.
+    table_spec = get_table_spec(spark, catalog, schema, silver_table)
 
     source_df = spark.readStream.table(f"{catalog}.{schema}.{bronze_table}")
 
-    if entity == "sales":
-        query = (
-            clean_sales(source_df)
-            .withColumn("_job_run_id", F.lit(args.job_run_id).cast("string"))
-            .writeStream.format("delta")
-            .option("checkpointLocation", args.checkpoint_path)
-            .trigger(availableNow=True)
-            .outputMode("append")
-            .toTable(f"{catalog}.{schema}.{silver_table}")
-        )
-    else:
-        query = (
-            source_df.writeStream.option("checkpointLocation", args.checkpoint_path)
-            .trigger(availableNow=True)
-            .foreachBatch(
-                lambda batch_df, _batch_id: merge_inventory_batch(
-                    batch_df,
-                    catalog,
-                    schema,
-                    silver_table,
-                    args.job_run_id,
-                )
+    query = (
+        source_df.writeStream.option("checkpointLocation", runtime["checkpoint_path"])
+        .trigger(availableNow=True)
+        .foreachBatch(
+            lambda batch_df, _batch_id: transform_and_merge_batch(
+                batch_df, runtime, table_spec
             )
-            .start()
         )
+        .start()
+    )
     query.awaitTermination()
 
 

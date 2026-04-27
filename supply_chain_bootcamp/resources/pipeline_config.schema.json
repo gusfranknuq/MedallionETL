@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pipeline_config.schema.json",
+  "title": "Pipeline Config (Bronze + Silver)",
+  "description": "Configuration shared across the bronze ingest and silver transform layers for a single source file/entity.",
+  "type": "object",
+  "required": [
+    "source_file_path",
+    "source_file_pattern",
+    "file_type",
+    "bronze_destination_table",
+    "schema_location",
+    "checkpoint_path"
+  ],
+  "properties": {
+    "catalog": { "type": "string" },
+    "schema": { "type": "string" },
+    "source_file_path": { "type": "string" },
+    "source_file_pattern": { "type": "string" },
+    "file_type": { "type": "string" },
+    "bronze_destination_table": { "type": "string" },
+    "schema_location": { "type": "string" },
+    "checkpoint_path": { "type": "string" },
+    "job_run_id": { "type": ["string", "null"] },
+    "reader_options": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    },
+    "autoloader_options": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean"] }
+    },
+    "write_options": {
+      "type": "object",
+      "properties": {
+        "output_mode": { "type": "string", "enum": ["append", "update", "complete"] },
+        "trigger_available_now": { "type": ["string", "boolean"] }
+      },
+      "additionalProperties": false
+    },
+    "silver": {
+      "type": "object",
+      "description": "Silver-layer transform contract. If absent, transform_silver will skip this config.",
+      "required": [
+        "source_bronze_table",
+        "silver_table",
+        "checkpoint_path",
+        "scope",
+        "column_definitions"
+      ],
+      "properties": {
+        "source_bronze_table": {
+          "type": "string",
+          "description": "Bronze table to read from (without catalog/schema prefix)."
+        },
+        "silver_table": {
+          "type": "string",
+          "description": "Target silver table to merge into."
+        },
+        "custom_cleaner": {
+          "type": ["string", "null"],
+          "description": "Key into src/silver/cleaners.py CLEANER_REGISTRY. Run before column_definitions."
+        },
+        "checkpoint_path": {
+          "type": "string",
+          "description": "Streaming checkpoint location for the silver query."
+        },
+        "scope": {
+          "type": "object",
+          "required": ["retailerid", "countryid"],
+          "properties": {
+            "retailerid": { "type": "integer" },
+            "countryid": { "type": "integer" }
+          },
+          "additionalProperties": false
+        },
+        "dimensions": {
+          "type": "array",
+          "description": "Ordered dimensions to resolve via dim_handler before the merge.",
+          "items": {
+            "type": "object",
+            "required": ["dimension"],
+            "properties": {
+              "dimension": {
+                "type": "string",
+                "enum": ["item", "store", "channel", "retailer", "country"]
+              },
+              "key_parts_from": {
+                "type": "array",
+                "description": "Optional documentation of which post-cleaner columns supply the dimension key parts. The actual recipe is read from dimension_key_l.",
+                "items": { "type": "string" }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "column_definitions": {
+          "type": "array",
+          "description": "Mapping from cleaned/dim-resolved stage frame to silver target columns.",
+          "items": {
+            "type": "object",
+            "required": ["target", "expr"],
+            "properties": {
+              "target": { "type": "string", "description": "Silver target column." },
+              "expr": { "type": "string", "description": "Spark SQL expression evaluated against the stage frame." }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+{
+  "ingest_bronze_sales": "../../resources/pipeline_config.sales.example.json",
+  "ingest_bronze_inventory": "../../resources/pipeline_config.inventory.example.json",
+  "transform_silver_sales": "../../resources/pipeline_config.sales.example.json",
+  "transform_silver_inventory": "../../resources/pipeline_config.inventory.example.json"
+}

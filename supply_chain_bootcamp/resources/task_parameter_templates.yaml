@@ -45,31 +45,19 @@ silver_transformations:
   transform_silver_sales:
     script: ../src/silver/transform_silver.py
     required_flags:
-      - --catalog
-      - --schema
-      - --entity
-      - --checkpoint-path
+      - --task-name
       - --job-run-id
     values:
-      --catalog: ${var.catalog_name}
-      --schema: ${var.schema_name}
-      --entity: sales
-      --checkpoint-path: ${var.silver_sales_checkpoint_path}
+      --task-name: transform_silver_sales
       --job-run-id: "{{job.run_id}}"
 
   transform_silver_inventory:
     script: ../src/silver/transform_silver.py
     required_flags:
-      - --catalog
-      - --schema
-      - --entity
-      - --checkpoint-path
+      - --task-name
       - --job-run-id
     values:
-      --catalog: ${var.catalog_name}
-      --schema: ${var.schema_name}
-      --entity: inventory
-      --checkpoint-path: ${var.silver_inventory_checkpoint_path}
+      --task-name: transform_silver_inventory
       --job-run-id: "{{job.run_id}}"
 
 gold_serving:
