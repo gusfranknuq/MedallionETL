@@ -7,7 +7,6 @@
   "bronze_destination_table": "bronze_inventory",
   "schema_location": "/Volumes/supply_chain/supply_chain/raw_sample_files/_state/schemas/bronze_inventory",
   "checkpoint_path": "/Volumes/supply_chain/supply_chain/raw_sample_files/_state/checkpoints/bronze_inventory",
-  "job_run_id": null,
   "reader_options": {
     "multiLine": false
   },
@@ -26,18 +25,16 @@
     "checkpoint_path": "/Volumes/supply_chain/supply_chain/raw_sample_files/_state/checkpoints/silver_inventory",
     "scope": {
       "retailerid": 1,
-      "countryid": 1
+      "countryid": 1,
+      "customerid": 1001
     },
-    "dimensions": [
-      { "dimension": "item",  "key_parts_from": ["sku"] },
-      { "dimension": "store", "key_parts_from": ["store_id"] }
-    ],
     "column_definitions": [
-      { "target": "day",        "expr": "to_date(latest_snapshot_time)" },
-      { "target": "channelid",  "expr": "CAST(0 AS BIGINT)" },
-      { "target": "customerid", "expr": "CAST(0 AS BIGINT)" },
-      { "target": "onhandqty",  "expr": "CAST(stock_level AS DOUBLE)" },
-      { "target": "instock",    "expr": "CASE WHEN status = 'IN_STOCK' THEN 1.0 ELSE 0.0 END" }
+      { "target": "itemnbr",     "expr": "CAST(sku AS STRING)" },
+      { "target": "storenbr",    "expr": "CAST(store_id AS STRING)" },
+      { "target": "day",         "expr": "to_date(latest_snapshot_time)" },
+      { "target": "channel_lvl", "expr": "DEFAULT", "default_value": { "type": "string", "value": "STORE" } },
+      { "target": "onhandqty",   "expr": "CAST(stock_level AS DOUBLE)" },
+      { "target": "instock",     "expr": "CASE WHEN status = 'IN_STOCK' THEN 1.0 ELSE 0.0 END" }
     ]
   }
 }

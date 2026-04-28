@@ -46,6 +46,7 @@ class DimensionSpec:
     id_col: str         # surrogate id column, e.g. "storeid"
     key_col: str        # natural key column, e.g. "store_key"
     keyname: str        # value of dimension_key_l.keyname, e.g. "storeid"
+    display: str        # human-readable plural label, e.g. "Stores"
     desc_cols: tuple[str, ...] = ()   # optional descriptor columns to upsert
 
 
@@ -57,6 +58,7 @@ DIMENSION_REGISTRY: dict[str, DimensionSpec] = {
         id_col="itemid",
         key_col="item_key",
         keyname="itemid",
+        display="Items",
         desc_cols=("itemdesc1", "itemdesc2", "itemdesc3"),
     ),
     "store": DimensionSpec(
@@ -65,6 +67,7 @@ DIMENSION_REGISTRY: dict[str, DimensionSpec] = {
         id_col="storeid",
         key_col="store_key",
         keyname="storeid",
+        display="Stores",
         desc_cols=("storedesc1", "storedesc2", "storedesc3"),
     ),
     "channel": DimensionSpec(
@@ -73,6 +76,7 @@ DIMENSION_REGISTRY: dict[str, DimensionSpec] = {
         id_col="channelid",
         key_col="channel_key",
         keyname="channelid",
+        display="Channels",
         desc_cols=("channeldesc1", "channeldesc2", "channeldesc3"),
     ),
     "retailer": DimensionSpec(
@@ -81,6 +85,7 @@ DIMENSION_REGISTRY: dict[str, DimensionSpec] = {
         id_col="retailerid",
         key_col="retailer_key",
         keyname="retailerid",
+        display="Retailers",
         desc_cols=("retailerdesc1", "retailerdesc2", "retailerdesc3"),
     ),
     "country": DimensionSpec(
@@ -89,6 +94,7 @@ DIMENSION_REGISTRY: dict[str, DimensionSpec] = {
         id_col="countryid",
         key_col="country_key",
         keyname="countryid",
+        display="Countries",
         desc_cols=("countrydesc1", "countrydesc2", "countrydesc3"),
     ),
 }

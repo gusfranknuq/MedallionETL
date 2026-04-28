@@ -21,7 +21,6 @@
     "bronze_destination_table": { "type": "string" },
     "schema_location": { "type": "string" },
     "checkpoint_path": { "type": "string" },
-    "job_run_id": { "type": ["string", "null"] },
     "reader_options": {
       "type": "object",
       "additionalProperties": { "type": ["string", "number", "boolean"] }
@@ -67,31 +66,21 @@
         },
         "scope": {
           "type": "object",
-          "required": ["retailerid", "countryid"],
+          "required": ["retailerid", "countryid", "customerid"],
           "properties": {
             "retailerid": { "type": "integer" },
-            "countryid": { "type": "integer" }
+            "countryid": { "type": "integer" },
+            "customerid": { "type": "integer" }
           },
           "additionalProperties": false
         },
         "dimensions": {
           "type": "array",
-          "description": "Ordered dimensions to resolve via dim_handler before the merge.",
+          "deprecated": true,
+          "description": "DEPRECATED. Dimensions are now auto-resolved from dimension_key_l: any keyname whose keyparts are all present as columns on the stage frame (after column_definitions are evaluated) will be resolved automatically. This field is ignored.",
           "items": {
             "type": "object",
-            "required": ["dimension"],
-            "properties": {
-              "dimension": {
-                "type": "string",
-                "enum": ["item", "store", "channel", "retailer", "country"]
-              },
-              "key_parts_from": {
-                "type": "array",
-                "description": "Optional documentation of which post-cleaner columns supply the dimension key parts. The actual recipe is read from dimension_key_l.",
-                "items": { "type": "string" }
-              }
-            },
-            "additionalProperties": false
+            "additionalProperties": true
           }
         },
         "column_definitions": {
@@ -102,7 +91,25 @@
             "required": ["target", "expr"],
             "properties": {
               "target": { "type": "string", "description": "Silver target column." },
-              "expr": { "type": "string", "description": "Spark SQL expression evaluated against the stage frame." }
+              "expr": {
+                "type": "string",
+                "description": "Spark SQL expression evaluated against the stage frame. Use the literal string 'DEFAULT' to instead use default_value."
+              },
+              "default_value": {
+                "type": "object",
+                "description": "Required when expr == 'DEFAULT'. Ignored otherwise. Wrap a constant in {type: <spark type>, value: <json scalar>} or use {type: 'sql', value: '<spark SQL fragment>'}.",
+                "required": ["type", "value"],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["string", "int", "bigint", "double", "boolean", "date", "timestamp", "sql"]
+                  },
+                  "value": {
+                    "type": ["string", "number", "boolean", "null"]
+                  }
+                },
+                "additionalProperties": false
+              }
             },
             "additionalProperties": false
           }

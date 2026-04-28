@@ -12,6 +12,7 @@ from pyspark.sql import functions as F
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def validate_identifier(value: str, name: str) -> str:
@@ -193,9 +194,6 @@ def _resolve_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
 
     if selected_config_path:
         config = _parse_bronze_config(selected_config_path)
-        config_job_run_id = config.get("job_run_id")
-        if config_job_run_id is None:
-            config_job_run_id = args.job_run_id
         return {
             "catalog": config.get("catalog", args.catalog),
             "schema": config.get("schema", args.schema),
@@ -205,7 +203,7 @@ def _resolve_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
             "bronze_destination_table": config["bronze_destination_table"],
             "schema_location": config["schema_location"],
             "checkpoint_path": config["checkpoint_path"],
-            "job_run_id": config_job_run_id,
+            "job_run_id": args.job_run_id,
             "reader_options": config.get("reader_options", {}),
             "autoloader_options": config.get(
                 "autoloader_options",
@@ -271,6 +269,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
     )
 
     table_name = f"{catalog}.{schema}.{bronze_table}"
+    task_name = args.task_name or "ingest_bronze"
+
+    print(f"Task {task_name}:")
+    print(f"  Running {task_name} with Job Run ID: {runtime_config['job_run_id']}")
+    print(
+        f"  Using the {runtime_config['source_file_pattern']} File Pattern "
+        f"for {runtime_config['source_file_path']}"
+    )
 
     reader = (
         spark.readStream.format("cloudFiles")
@@ -304,6 +310,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     query = writer.outputMode(output_mode).toTable(table_name)
     query.awaitTermination()
+
+    # Sum input rows across all microbatches that ran in this trigger.
+    # recentProgress is populated by Structured Streaming after each batch.
+    rows_loaded = sum(
+        int(p.get("numInputRows", 0) or 0) for p in query.recentProgress
+    )
+    print(f"  Loaded {rows_loaded} rows into {table_name}")
 
 
 if __name__ == "__main__":
