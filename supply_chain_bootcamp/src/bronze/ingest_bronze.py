@@ -11,7 +11,9 @@ from pyspark.sql import functions as F
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-logging.basicConfig(level=logging.INFO)
+from src.common.logging_utils import configure_project_logging
+
+configure_project_logging()
 logger = logging.getLogger(__name__)
 
 

@@ -59,12 +59,15 @@ from src.bronze.ingest_bronze import (
 )
 from src.silver.cleaners import get_cleaner
 from src.silver.dim_handler import DIMENSION_REGISTRY, dim_handler
-from src.silver.table_config import SilverTableSpec, get_table_spec
+from src.silver.table_config import SilverTableSpec, get_load_table_spec, get_load_table_spec
+from src.silver.utils import is_df_empty
 
 
 IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+from src.common.logging_utils import configure_project_logging
+
+configure_project_logging()
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 
 # Re-exported for backwards compatibility with existing tests.
@@ -401,7 +404,7 @@ def transform_and_merge_batch(
         )
     batch_df = batch_df.filter(F.col("_job_run_id") == F.lit(str(source_job_run_id)))
 
-    if batch_df.rdd.isEmpty():
+    if is_df_empty(batch_df):
         print(
             f"  No bronze rows for {silver_table} with "
             f"_job_run_id={source_job_run_id}; skipping"
@@ -467,11 +470,13 @@ def transform_and_merge_batch(
         )
 
     select_cols = [F.col(c) for c in [*key_columns, *fact_columns]]
+    final_df = stage.select(*select_cols).dropna(subset=key_columns)
+    if fact_columns:
+        agg_exprs = [F.sum(F.col(c)).alias(c) for c in fact_columns]
+        final_df = final_df.groupBy(*key_columns).agg(*agg_exprs)
+
     final_df = (
-        stage.select(*select_cols)
-        # Drop any rows where a merge key is null -- they'd produce
-        # ambiguous matches in the MERGE.
-        .dropna(subset=key_columns)
+        final_df
         .withColumn("insjobid", F.lit(job_run_id).cast("string"))
         .withColumn("modjobid", F.lit(job_run_id).cast("string"))
         .withColumn("ins_ts", F.current_timestamp())
@@ -534,7 +539,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
 
     # Resolve KEY/FACT/AUDIT columns once at startup from silver_table_config_l;
     # the per-batch loader doesn't need to re-read this metadata.
-    table_spec = get_table_spec(spark, catalog, schema, silver_table)
+    table_spec = get_load_table_spec(spark, catalog, schema, silver_table)
 
     # Auto-discover the latest bronze run to process. Silver is self-contained:
     # it does NOT receive the bronze run id from the orchestrator. It picks the

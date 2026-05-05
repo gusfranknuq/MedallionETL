@@ -29,6 +29,8 @@ from delta.tables import DeltaTable
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from src.silver.utils import is_df_empty
+
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +171,7 @@ def _ensure_dim_table_exists(
     """
     if not spark.catalog.tableExists(table_fqn):
         logger.info("Dimension table %s missing; creating empty Delta table", table_fqn)
-        template_df.limit(0).write.format("delta").saveAsTable(table_fqn)
+    template_df.limit(0).write.format("delta").mode("ignore").saveAsTable(table_fqn)
 
 
 # --------------------------------------------------------------------------- #
@@ -258,14 +260,17 @@ def dim_handler(
     )
     _ensure_dim_table_exists(spark, table_fqn, template_for_create)
 
-    existing = spark.table(table_fqn).select(
-        spec.key_col, "retailerid", "countryid", spec.id_col,
+    existing = (
+        spark.table(table_fqn)
+        .select(spec.key_col, "retailerid", "countryid", spec.id_col)
+        .groupBy(spec.key_col, "retailerid", "countryid")
+        .agg(F.min(F.col(spec.id_col)).alias(spec.id_col))
     )
     new_rows = candidates.join(
         existing, [spec.key_col, "retailerid", "countryid"], "left_anti"
     )
 
-    if not new_rows.isEmpty():
+    if not is_df_empty(new_rows):
         offset = _next_id_offset(spark, table_fqn, spec.id_col)
         # monotonically_increasing_id() is non-contiguous across partitions,
         # so collapse to a single partition to get a dense 0..N-1 sequence

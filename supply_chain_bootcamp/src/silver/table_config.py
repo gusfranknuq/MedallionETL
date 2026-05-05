@@ -8,7 +8,7 @@ columns and the pipeline configs do not need to repeat ``merge_keys`` /
 ``metric_columns``.
 
 Audit columns are documented in the table for completeness but are NOT
-returned by :func:`get_table_spec`; the loader hardcodes how to populate
+returned by :func:`get_load_table_spec`; the loader hardcodes how to populate
 ``insjobid`` / ``modjobid`` / ``ins_ts`` / ``mod_ts``.
 """
 
@@ -45,7 +45,7 @@ class SilverTableSpec:
         return self.key_columns + self.fact_columns
 
 
-def get_table_spec(
+def get_load_table_spec(
     spark: SparkSession,
     catalog: str,
     schema: str,

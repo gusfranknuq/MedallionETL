@@ -41,15 +41,16 @@ resources:
               - --job-run-id
               - "{{job.run_id}}"
           environment_key: default
-        - task_key: transform_silver_inventory
-          spark_python_task:
-            python_file: ../src/silver/transform_silver.py
-            parameters:
-              - --task-name
-              - transform_silver_inventory
-              - --job-run-id
-              - "{{job.run_id}}"
-          environment_key: default
+        # Disabled for sales-only testing
+        # - task_key: transform_silver_inventory
+        #   spark_python_task:
+        #     python_file: ../src/silver/transform_silver.py
+        #     parameters:
+        #       - --task-name
+        #       - transform_silver_inventory
+        #       - --job-run-id
+        #       - "{{job.run_id}}"
+        #   environment_key: default
     supply_chain_gold_serve:
       name: supply_chain_gold_serve
       environments:
